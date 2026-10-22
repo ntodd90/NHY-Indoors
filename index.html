@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Northline Home & Yard – Store Operations</title>
+  <link rel="stylesheet" href="styles.css" />
+  <!-- ArcGIS Maps SDK for JavaScript 5.1: one tag loads core, map components and Calcite -->
+  <script type="module" src="https://js.arcgis.com/5.1/"></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <div id="boot">
+    <div class="boot-card">
+      <div class="boot-title">Northline Home & Yard</div>
+      <div class="boot-sub" id="bootMsg">Signing in to ArcGIS…</div>
+      <div class="boot-bar"><div></div></div>
+    </div>
+  </div>
+
+  <calcite-shell>
+    <!-- ===== Header ===== -->
+    <calcite-navigation slot="header">
+      <calcite-navigation-logo slot="logo" heading="Northline Home & Yard"
+        description="Store Operations · Midway, St. Paul (demo)" icon="shopping-cart"></calcite-navigation-logo>
+      <div slot="content-end" class="header-end">
+        <span class="live-dot"></span><span id="lastUpdated" class="muted">–</span>
+        <calcite-button id="refreshBtn" appearance="transparent" kind="neutral" icon-start="refresh">Refresh</calcite-button>
+        <calcite-button id="signOutBtn" appearance="transparent" kind="neutral" icon-start="sign-out">Sign out</calcite-button>
+      </div>
+      <calcite-navigation-user slot="user" id="userChip"></calcite-navigation-user>
+    </calcite-navigation>
+
+    <!-- ===== Left panel ===== -->
+    <calcite-shell-panel slot="panel-start" id="leftPanel" width="l">
+      <calcite-action-bar slot="action-bar" id="actionBar">
+        <calcite-action data-panel="overview" icon="dashboard" text="Overview" active></calcite-action>
+        <calcite-action data-panel="views" icon="bookmark" text="Quick Views"></calcite-action>
+        <calcite-action data-panel="find" icon="search" text="Find an Item"></calcite-action>
+        <calcite-action data-panel="pickup" text="Pickup" title="Pickup &amp; Fulfillment">
+          <span class="pickup-locker-icon" aria-hidden="true"><span></span><span></span></span>
+        </calcite-action>
+        <calcite-action data-panel="maint" icon="wrench" text="Maintenance"></calcite-action>
+        <calcite-action data-panel="cameras" icon="video" text="Security Cameras"></calcite-action>
+        <calcite-action data-panel="layers" icon="layers" text="Layers"></calcite-action>
+        <calcite-action data-panel="legend" icon="legend" text="Legend"></calcite-action>
+      </calcite-action-bar>
+
+      <!-- Overview -->
+      <calcite-panel data-panel="overview" heading="Store Overview" description="Live status across the store and yard">
+        <button id="overviewHome" class="overview-home" slot="header-content" type="button" title="Return to initial map view" disabled>
+          <span class="overview-home-text"><span class="overview-home-heading">Store Overview</span><span class="overview-home-description">Live status across the store and yard</span></span>
+          <calcite-icon icon="home" scale="s" aria-hidden="true"></calcite-icon>
+        </button>
+        <div class="pad">
+          <div class="kpis" id="kpis"></div>
+          <div class="section-title">Needs attention</div>
+          <calcite-list id="attnList" selection-mode="none" label="Needs attention"></calcite-list>
+        </div>
+      </calcite-panel>
+
+      <!-- Quick views -->
+      <calcite-panel data-panel="views" heading="Quick Views" description="Presenter shortcuts · keys 1–9" hidden>
+        <div class="pad">
+          <calcite-list id="viewList" selection-mode="single-persist" label="Quick views"></calcite-list>
+          <div class="notes" id="viewNotes"></div>
+        </div>
+      </calcite-panel>
+
+      <!-- Find an item -->
+      <calcite-panel data-panel="find" heading="Find an Item" description="Search tracked products, click to go to the aisle" hidden>
+        <div class="pad">
+          <calcite-input-text id="findInput" placeholder="Try: stud, PEX, paint, drill…" icon="search" clearable></calcite-input-text>
+          <calcite-list id="findList" selection-mode="none" label="Products" class="mt"></calcite-list>
+        </div>
+      </calcite-panel>
+
+      <!-- Pickup -->
+      <calcite-panel data-panel="pickup" heading="Pickup & Fulfillment" description="Lockers, curbside and pro load-out" hidden>
+        <div class="pad" id="pickupContent"></div>
+      </calcite-panel>
+
+      <!-- Maintenance -->
+      <calcite-panel data-panel="maint" heading="Equipment & Maintenance" description="Click an asset to go to it" hidden>
+        <div class="pad">
+          <calcite-segmented-control id="eqFilter" width="full" scale="s">
+            <calcite-segmented-control-item value="issues" checked>Needs work</calcite-segmented-control-item>
+            <calcite-segmented-control-item value="Down">Down</calcite-segmented-control-item>
+            <calcite-segmented-control-item value="PM Due">PM due</calcite-segmented-control-item>
+            <calcite-segmented-control-item value="all">All</calcite-segmented-control-item>
+          </calcite-segmented-control>
+          <calcite-list id="eqList" selection-mode="none" label="Equipment" class="mt"></calcite-list>
+        </div>
+      </calcite-panel>
+
+      <calcite-panel data-panel="cameras" heading="Security Cameras" hidden>
+        <div class="pad">
+          <div id="cameraSummary" class="muted" role="status">Loading cameras...</div>
+          <calcite-label layout="inline" class="mt"><calcite-checkbox id="cameraCoverage" checked></calcite-checkbox>Coverage areas</calcite-label>
+          <div class="muted">Illustrative fields of view; walls and shelving are not modeled.</div>
+          <calcite-list id="cameraList" selection-mode="none" label="Security cameras" class="mt"></calcite-list>
+        </div>
+      </calcite-panel>
+
+      <calcite-panel data-panel="layers" heading="Layers" hidden>
+        <arcgis-layer-list reference-element="map" show-filter></arcgis-layer-list>
+      </calcite-panel>
+      <calcite-panel data-panel="legend" heading="Legend" hidden>
+        <arcgis-legend reference-element="map"></arcgis-legend>
+      </calcite-panel>
+    </calcite-shell-panel>
+
+    <!-- ===== Map ===== -->
+    <arcgis-map id="map">
+      <arcgis-zoom slot="top-left"></arcgis-zoom>
+      <arcgis-home slot="top-left"></arcgis-home>
+      <arcgis-floor-filter slot="top-right"></arcgis-floor-filter>
+    </arcgis-map>
+  </calcite-shell>
+
+  <dialog id="cameraDialog" class="camera-dialog" aria-labelledby="cameraTitle" aria-describedby="cameraLocation">
+    <header class="camera-header">
+      <div><h2 id="cameraTitle">Security camera</h2><p id="cameraLocation"></p></div>
+      <calcite-button id="cameraClose" appearance="transparent" kind="neutral" icon-start="x" title="Close camera">Close</calcite-button>
+    </header>
+    <div class="camera-screen">
+      <video id="cameraVideo" muted autoplay loop playsinline controls preload="none" aria-label="Prerecorded demo security footage"></video>
+      <div class="camera-osd"><span id="cameraOsd"></span><span>SIMULATED LIVE</span></div>
+      <time id="cameraClock" class="camera-clock"></time>
+    </div>
+    <footer class="camera-footer">
+      <span id="cameraFeedStatus" role="status"></span>
+      <calcite-button id="cameraRetry" appearance="transparent" icon-start="refresh" title="Retry playback">Retry</calcite-button>
+      <a id="cameraCredit" target="_blank" rel="noopener noreferrer">Stock footage: Pexels</a>
+    </footer>
+  </dialog>
+
+  <calcite-alert id="errAlert" kind="danger" icon="exclamation-mark-triangle" label="Error">
+    <div slot="title">Something went wrong</div>
+    <div slot="message" id="errMsg"></div>
+  </calcite-alert>
+</body>
+</html>
