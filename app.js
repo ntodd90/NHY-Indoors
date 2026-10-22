@@ -21,7 +21,10 @@ function showError(msg, err) {
 const bootMsg = (t) => ($("bootMsg").textContent = t);
 
 // -------------------------------------------------------------------------------------
-// 1. Sign in (OAuth, same-window redirect)
+// 1. Sign in (OAuth)
+//    Opened directly:      same-window redirect, as before.
+//    Embedded in an iframe (e.g. an exb Embed widget): ArcGIS sign-in can't load inside
+//    the frame, so we use a popup window (needs a click) + oauth-callback.html.
 // -------------------------------------------------------------------------------------
 const [esriConfig, OAuthInfo, esriId, Portal] = await $arcgis.import([
   "@arcgis/core/config.js",
@@ -29,15 +32,54 @@ const [esriConfig, OAuthInfo, esriId, Portal] = await $arcgis.import([
   "@arcgis/core/identity/IdentityManager.js",
   "@arcgis/core/portal/Portal.js"
 ]);
+const IN_FRAME = (() => { try { return window.self !== window.top; } catch { return true; } })();
 esriConfig.portalUrl = CONFIG.portalUrl;
-esriId.registerOAuthInfos([new OAuthInfo({ appId: CONFIG.appId, portalUrl: CONFIG.portalUrl, popup: false })]);
+esriId.registerOAuthInfos([new OAuthInfo({
+  appId: CONFIG.appId,
+  portalUrl: CONFIG.portalUrl,
+  popup: IN_FRAME,
+  popupCallbackUrl: "oauth-callback.html"     // relative to this page; register its full URL as a redirect
+})]);
 const sharingUrl = CONFIG.portalUrl + "/sharing";
+
+// In a frame, the sign-in popup must be opened by a click (browsers block automatic popups).
+function framedSignIn() {
+  return new Promise((resolve) => {
+    bootMsg("Sign in to ArcGIS to load the app.");
+    const card = document.querySelector(".boot-card");
+    card.querySelector(".boot-bar")?.remove();
+    const box = document.createElement("div");
+    box.className = "boot-actions";
+    box.innerHTML = `<calcite-button id="frameSignIn" icon-start="sign-in" scale="l">Sign in</calcite-button>
+      <div class="boot-help">A small ArcGIS sign-in window will open. If nothing happens, allow pop-ups
+      for this site, or <a href="${location.href}" target="_blank" rel="noopener">open the app in a new tab</a>.</div>`;
+    card.appendChild(box);
+    $("frameSignIn").addEventListener("click", async () => {
+      $("frameSignIn").loading = true;
+      try {
+        await esriId.getCredential(sharingUrl);
+        box.remove();
+        resolve();
+      } catch (e) {
+        $("frameSignIn").loading = false;
+        bootMsg("Sign-in didn't finish. Try again, or open the app in a new tab.");
+        console.warn("[auth] popup sign-in failed", e);
+      }
+    });
+  });
+}
+
 try {
   await esriId.checkSignInStatus(sharingUrl);
 } catch {
-  bootMsg("Redirecting to ArcGIS sign-in…");
-  await esriId.getCredential(sharingUrl);
+  if (IN_FRAME) {
+    await framedSignIn();
+  } else {
+    bootMsg("Redirecting to ArcGIS sign-in…");
+    await esriId.getCredential(sharingUrl);
+  }
 }
+bootMsg("Loading…");
 try {
   const portal = new Portal({ url: CONFIG.portalUrl, authMode: "immediate" });
   await portal.load();
