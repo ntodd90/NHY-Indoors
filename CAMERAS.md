@@ -8,10 +8,13 @@ client-side demo layers; no hosted features or web map items are edited.
 Camera positions, headings, range and field of view are defined in
 `CAMERA_LAYOUT` in `cameras.js`. Positions are fractions of each facility's
 bounding extent, queried in EPSG:26993. Indoor positions are checked against the
-footprint, and indoor coverage wedges are clipped to that footprint. Department
-names are illustrative labels, not surveyed department or installation positions.
-The wedges are not obstruction-aware viewshed analysis: walls, shelving, height,
-terrain and intervening buildings are not evaluated.
+footprint, and indoor coverage wedges are clipped to that footprint. Green areas
+show illustrative 2D sightlines up to mapped walls, columns, gondolas and racks;
+red areas show the projected shadow beyond those obstructions. Exterior viewsheds
+use mapped facility footprints as blockers. Department names are illustrative
+labels, not surveyed department or installation positions. This is not a surveyed
+or 3D viewshed: obstruction heights, camera elevation, terrain, glass and
+visibility under changing conditions are not evaluated.
 
 The viewer loops representative stock footage with a camera ID and a current
 America/Chicago timestamp. It is labeled SIMULATED LIVE throughout. It is not an

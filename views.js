@@ -15,7 +15,7 @@ export const VIEWS = [
         layers: [...INDOOR, ...YARD, "doors", "security", "cameras", "cameraCoverage", "guards"], target: { site: true }, floor: null,
         highlight: { cat: "security", where: "DEMO_STATUS <> 'Normal'" },
         notes: ["All security devices and cameras are visible across the store and yard; utilities are off",
-          "Select a camera for simulated footage and its illustrative coverage area",
+            "Select a camera for simulated footage and its red/green viewshed",
           "Alarms and offline devices are highlighted; cameras are hidden in every other Quick View"]
   },
   {

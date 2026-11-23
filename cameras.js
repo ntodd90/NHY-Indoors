@@ -3,12 +3,12 @@ import { setFloor } from "./layers.js";
 export const CAMERA_LAYOUT = [
   { id: "CAM-01", name: "Front entrance", facility: "NHY.B1", level: "NHY.B1.L1", position: [0.88, 0.15], heading: 300 },
   { id: "CAM-02", name: "Checkout lanes", facility: "NHY.B1", level: "NHY.B1.L1", position: [0.85, 0.42], heading: 270 },
-  { id: "CAM-03", name: "Order pickup", facility: "NHY.B1", level: "NHY.B1.L1", position: [0.85, 0.75], heading: 235 },
-  { id: "CAM-04", name: "Tools & hardware", facility: "NHY.B1", level: "NHY.B1.L1", position: [0.18, 0.18], heading: 45 },
+  { id: "CAM-03", name: "Garden Center", facility: "NHY.B1", level: "NHY.B1.L1", position: [0.3793, 0.7264], heading: 0 },
+  { id: "CAM-04", name: "Hardware aisles", facility: "NHY.B1", level: "NHY.B1.L1", position: [0.6365, 0.4150], heading: 105 },
   { id: "CAM-05", name: "Paint aisles", facility: "NHY.B1", level: "NHY.B1.L1", position: [0.45, 0.22], heading: 0 },
   { id: "CAM-06", name: "Plumbing aisles", facility: "NHY.B1", level: "NHY.B1.L1", position: [0.18, 0.78], heading: 135 },
   { id: "CAM-07", name: "Overstock racks", facility: "NHY.B1", level: "NHY.B1.L2", position: [0.22, 0.25], heading: 45 },
-  { id: "CAM-08", name: "Back office corridor", facility: "NHY.B1", level: "NHY.B1.L2", position: [0.78, 0.78], heading: 225 },
+  { id: "CAM-08", name: "Seasonal overstock", facility: "NHY.B1", level: "NHY.B1.L2", position: [0.5420, 0.7644], heading: 300 },
   { id: "CAM-09", name: "Entrance apron", facility: "NHY.B1", position: [1.03, 0.18], heading: 90 },
   { id: "CAM-10", name: "Curbside pickup", facility: "NHY.B1", position: [1.03, 0.72], heading: 90 },
   { id: "CAM-11", name: "Lumber drive-thru entrance", facility: "NHY.B2", position: [0.15, 0.2], heading: 0 },
@@ -24,6 +24,57 @@ export function coverageRing(point, heading, range, fov) {
   }
   ring.push([point.x, point.y]);
   return ring;
+}
+
+function obstacleSegments(obstacles) {
+  return obstacles.flatMap(({ geometry }) => (geometry.paths || geometry.rings || []).flatMap((path) =>
+    path.slice(1).map((end, index) => ({ start: path[index], end }))
+  ));
+}
+
+function rayDistance(point, angle, range, segments) {
+  const directionX = Math.sin(angle);
+  const directionY = Math.cos(angle);
+  let nearest = range;
+  for (const { start, end } of segments) {
+    const segmentX = end[0] - start[0];
+    const segmentY = end[1] - start[1];
+    const offsetX = start[0] - point.x;
+    const offsetY = start[1] - point.y;
+    const denominator = directionX * segmentY - directionY * segmentX;
+    if (Math.abs(denominator) < 1e-8) continue;
+    const distance = (offsetX * segmentY - offsetY * segmentX) / denominator;
+    const fraction = (offsetX * directionY - offsetY * directionX) / denominator;
+    if (distance > 0.25 && distance < nearest && fraction >= 0 && fraction <= 1) nearest = distance;
+  }
+  return nearest;
+}
+
+export function viewshedSectors(camera, obstacles, slices = 48) {
+  const segments = obstacleSegments(obstacles);
+  const start = (camera.heading - camera.fov / 2) * Math.PI / 180;
+  const step = camera.fov * Math.PI / 180 / slices;
+  const origin = [camera.point.x, camera.point.y];
+  const distances = Array.from({ length: slices + 1 }, (_, index) => rayDistance(camera.point, start + step * index, camera.range, segments));
+  const visibleRing = [origin];
+  const blockedRings = [];
+  for (let index = 0; index <= slices; index++) {
+    const angle = start + step * index;
+    visibleRing.push([camera.point.x + Math.sin(angle) * distances[index], camera.point.y + Math.cos(angle) * distances[index]]);
+    if (index === slices || (distances[index] >= camera.range && distances[index + 1] >= camera.range)) continue;
+    const nextAngle = start + step * (index + 1);
+    const near = distances[index], nextNear = distances[index + 1];
+    if (Math.max(near, nextNear) >= camera.range - 0.01) continue;
+    const ring = [
+      [camera.point.x + Math.sin(angle) * near, camera.point.y + Math.cos(angle) * near],
+      [camera.point.x + Math.sin(angle) * camera.range, camera.point.y + Math.cos(angle) * camera.range],
+      [camera.point.x + Math.sin(nextAngle) * camera.range, camera.point.y + Math.cos(nextAngle) * camera.range],
+      [camera.point.x + Math.sin(nextAngle) * nextNear, camera.point.y + Math.cos(nextAngle) * nextNear]
+    ];
+    blockedRings.push([...ring, ring[0]]);
+  }
+  visibleRing.push(origin);
+  return { visible: visibleRing, blocked: blockedRings };
 }
 
 export const CAMERA_MEDIA = {
@@ -47,6 +98,13 @@ export async function initCameras({ view, layers, floorFilterEl }) {
   query.outSpatialReference = { wkid: 26993 };
   const result = await layers.facilities.queryFeatures(query);
   const footprints = new Map(result.features.map((feature) => [feature.attributes.FACILITY_ID, feature.geometry]));
+  const levels = [...new Set(CAMERA_LAYOUT.map((camera) => camera.level).filter(Boolean))];
+  const detailQuery = layers.details.createQuery();
+  detailQuery.where = `(${detailQuery.where || "1=1"}) AND LEVEL_ID IN (${levels.map((level) => `'${level}'`).join(",")}) AND USE_TYPE IN ('Exterior Wall','Interior Wall','Column','Gondola','Rack')`;
+  detailQuery.outFields = ["LEVEL_ID", "USE_TYPE"];
+  detailQuery.returnGeometry = true;
+  detailQuery.outSpatialReference = { wkid: 26993 };
+  const details = (await layers.details.queryFeatures(detailQuery)).features;
   const cameras = CAMERA_LAYOUT.map((camera, index) => {
     const footprint = footprints.get(camera.facility);
     if (!footprint) throw new Error(`Missing footprint for ${camera.facility}.`);
@@ -68,13 +126,32 @@ export async function initCameras({ view, layers, floorFilterEl }) {
     const coverage = camera.level ? intersectionOperator.execute(wedge, footprint) : wedge;
     if (!coverage) throw new Error(`No coverage area found for ${camera.id}.`);
     const attributes = { OBJECTID: index + 1, CAMERA_ID: camera.id, NAME: camera.name, LEVEL_ID: camera.level || null };
-    return { ...camera, point, coverage, attributes };
+    const obstacles = camera.level
+      ? details.filter((feature) => feature.attributes.LEVEL_ID === camera.level)
+      : result.features.filter((feature) => !containsOperator.execute(feature.geometry, point));
+    return { ...camera, point, coverage, attributes, obstacles };
   });
-  const fields = [{ name: "OBJECTID", type: "oid" }, ...["CAMERA_ID", "NAME", "LEVEL_ID"].map((name) => ({ name, type: "string" }))];
-  const common = { fields, objectIdField: "OBJECTID", spatialReference: { wkid: 26993 }, floorInfo: { levelField: "LEVEL_ID" }, popupEnabled: false, outFields: ["*"], visible: false };
-  const coverageLayer = new FeatureLayer({ ...common, title: "Camera fields of view (illustrative)", geometryType: "polygon",
-    source: cameras.map((camera) => new Graphic({ geometry: camera.coverage, attributes: camera.attributes })),
-    renderer: { type: "simple", symbol: { type: "simple-fill", color: [46, 125, 79, 0.16], outline: null } }
+  const viewshedFeatures = [];
+  let objectId = 1;
+  for (const camera of cameras) {
+    const zones = viewshedSectors(camera, camera.obstacles);
+    for (const [status, rings] of [["Visible", [zones.visible]], ["Blocked", zones.blocked]]) {
+      for (const ring of rings) {
+        const sector = new Polygon({ rings: [ring], spatialReference: camera.point.spatialReference });
+        const geometry = camera.level ? intersectionOperator.execute(sector, camera.coverage) : sector;
+        if (!geometry) continue;
+        viewshedFeatures.push(new Graphic({ geometry, attributes: { ...camera.attributes, OBJECTID: objectId++, VIEWSHED_STATUS: status } }));
+      }
+    }
+  }
+  const fields = [{ name: "OBJECTID", type: "oid" }, ...["CAMERA_ID", "NAME", "LEVEL_ID", "VIEWSHED_STATUS"].map((name) => ({ name, type: "string" }))];
+  const common = { fields, objectIdField: "OBJECTID", spatialReference: { wkid: 26993 }, floorInfo: { floorField: "LEVEL_ID" }, popupEnabled: false, outFields: ["*"], visible: false };
+  const coverageLayer = new FeatureLayer({ ...common, title: "Camera viewsheds (illustrative)", geometryType: "polygon",
+    source: viewshedFeatures,
+    renderer: { type: "unique-value", field: "VIEWSHED_STATUS", uniqueValueInfos: [
+      { value: "Visible", label: "Visible", symbol: { type: "simple-fill", color: [46, 125, 79, 0.22], outline: null } },
+      { value: "Blocked", label: "Blocked", symbol: { type: "simple-fill", color: [190, 45, 50, 0.28], outline: null } }
+    ] }
   });
   const cameraLayer = new FeatureLayer({ ...common, title: "Demo security cameras", geometryType: "point",
     source: cameras.map((camera) => new Graphic({ geometry: camera.point, attributes: camera.attributes })),
@@ -83,6 +160,18 @@ export async function initCameras({ view, layers, floorFilterEl }) {
   });
   await Promise.all([coverageLayer.load(), cameraLayer.load()]);
   view.map.addMany([coverageLayer, cameraLayer]);
+  const filterFloor = () => {
+    const levels = view.floors?.toArray() || [];
+    const where = levels.length
+      ? `LEVEL_ID IN (${levels.map((level) => `'${level.replace(/'/g, "''")}'`).join(",")})`
+      : "1=1";
+    cameraLayer.definitionExpression = where;
+    coverageLayer.definitionExpression = where;
+  };
+  filterFloor();
+  const floorObserver = floorFilterEl && new MutationObserver(filterFloor);
+  floorObserver?.observe(floorFilterEl, { attributes: true, attributeFilter: ["facility", "level"] });
+  window.addEventListener("pagehide", () => floorObserver?.disconnect(), { once: true });
   const video = element("cameraVideo");
   const dialog = element("cameraDialog");
   let selected = null;
@@ -157,6 +246,6 @@ export async function initCameras({ view, layers, floorFilterEl }) {
       if (camera) await openCamera(camera, false);
     } catch (error) { console.warn("[cameras] selection", error); }
   });
-  element("cameraSummary").textContent = "13 cameras | 8 indoor / 5 exterior";
+  element("cameraSummary").textContent = "13 cameras | 8 indoor / 5 exterior | mapped 2D obstructions";
   return { cameraLayer, coverageLayer };
 }
