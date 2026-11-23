@@ -52,6 +52,9 @@ const RULES = [
 ];
 export function classify(layer) {
   if (layer.id === "security-guards") return "guards";
+  if (layer.id === "yard-forklift") return "forklift";
+  if (layer.id === "overnight-guard") return "overnightGuard";
+  if (layer.id === "overnight-heat") return "overnightHeat";
   const f = new Set((layer.fields || []).map((x) => x.name.toUpperCase()));
   const hit = RULES.find(([, test]) => test(f, layer));
   return hit ? hit[0] : "other";

@@ -337,9 +337,11 @@ try {
   showError("Security cameras failed to load.", e);
 }
 
+let forkliftPatrol = null;
 try {
   const { initForklift } = await import("./forklift.js");
-  await initForklift({ view, layers: L });
+  forkliftPatrol = await initForklift({ view, layers: L });
+  flayers.push(forkliftPatrol.layer);
 } catch (e) {
   showError("The yard forklift simulation failed to load.", e);
 }
@@ -352,9 +354,17 @@ try {
 }
 
 try {
+  const { initOvernightPatrol } = await import("./overnight.js");
+  const overnight = await initOvernightPatrol({ view, layers: L });
+  flayers.push(overnight.guardLayer, overnight.heatLayer);
+} catch (e) {
+  showError("Overnight security patrol failed to load.", e);
+}
+
+try {
   const { initViews } = await import("./views.js");
   const initialFloor = floorFilterEl?.level || view.floors?.getItemAt(0) || null;
-  const { reset } = await initViews({ view, flayers, floorFilterEl, initialViewpoint, initialFloor, listEl: $("viewList"), notesEl: $("viewNotes") });
+  const { reset } = await initViews({ view, flayers, floorFilterEl, initialViewpoint, initialFloor, listEl: $("viewList"), notesEl: $("viewNotes"), onViewChange: (id) => id === "security" ? forkliftPatrol?.park() : forkliftPatrol?.resume() });
   $("overviewHome").disabled = false;
   $("overviewHome").addEventListener("click", async () => {
     hl?.remove(); hl = null;

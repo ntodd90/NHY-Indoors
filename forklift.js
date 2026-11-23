@@ -60,10 +60,11 @@ export function patrolAt(patrol, elapsed) {
 }
 
 export async function initForklift({ view, layers }) {
-  const [GraphicsLayer, Graphic, Point] = await $arcgis.import([
+  const [GraphicsLayer, Graphic, Point, containsOperator] = await $arcgis.import([
     "@arcgis/core/layers/GraphicsLayer.js",
     "@arcgis/core/Graphic.js",
-    "@arcgis/core/geometry/Point.js"
+    "@arcgis/core/geometry/Point.js",
+    "@arcgis/core/geometry/operators/containsOperator.js"
   ]);
   if (!layers.lanes || !layers.gates) throw new Error("The forklift needs the yard lanes and gates.");
   async function queryFeatures(layer, condition) {
@@ -87,6 +88,22 @@ export async function initForklift({ view, layers }) {
   const entryIndex = entry ? coordinates.findIndex((coordinate) => Math.hypot(coordinate[0] - entry.geometry.x, coordinate[1] - entry.geometry.y) < 1) : -1;
   const route = entryIndex >= 0 ? [...coordinates.slice(entryIndex), ...coordinates.slice(0, entryIndex)] : coordinates;
   const patrol = createPatrol(route, gates.map((feature) => [feature.geometry.x, feature.geometry.y]));
+  const yardZones = layers.zones ? await queryFeatures(layers.zones, "ZONE_TYPE = 'Lumber Yard'") : [];
+  const yardExtent = yardZones[0]?.geometry.extent;
+  let parkedPosition = yardExtent ? [yardExtent.center.x, yardExtent.center.y] : null;
+  if (parkedPosition && !containsOperator.execute(yardZones[0].geometry, new Point({ x: parkedPosition[0], y: parkedPosition[1], spatialReference: { wkid: 26993 } }))) {
+    for (let column = 1; column < 20 && !containsOperator.execute(yardZones[0].geometry, new Point({ x: parkedPosition[0], y: parkedPosition[1], spatialReference: { wkid: 26993 } })); column++) {
+      for (let row = 1; row < 20; row++) {
+        const x = yardExtent.xmin + yardExtent.width * column / 20;
+        const y = yardExtent.ymin + yardExtent.height * row / 20;
+        if (containsOperator.execute(yardZones[0].geometry, new Point({ x, y, spatialReference: { wkid: 26993 } }))) {
+          parkedPosition = [x, y];
+          break;
+        }
+      }
+    }
+  }
+  if (!parkedPosition) parkedPosition = [route[0][0], route[0][1]];
   const panel = document.createElement("div");
   panel.className = "forklift-popup";
   panel.style.minWidth = "180px";
@@ -123,7 +140,7 @@ export async function initForklift({ view, layers }) {
   }
   values["Last operator"].textContent = "Jordan Lee (demo)";
   panel.appendChild(details);
-  const layer = new GraphicsLayer({ title: "Yard forklift (simulated)", popupEnabled: true });
+  const layer = new GraphicsLayer({ id: "yard-forklift", title: "Yard forklift (simulated)", popupEnabled: true });
   const symbol = { type: "picture-marker", url: "https://cdn.jsdelivr.net/npm/lucide-static@0.468.0/icons/forklift.svg", width: 16, height: 16 };
   const graphic = new Graphic({
     symbol,
@@ -134,9 +151,11 @@ export async function initForklift({ view, layers }) {
   view.map.add(layer);
   let elapsed = 0;
   let previous = performance.now();
+  let parked = false;
   function update(now) {
     const delta = Math.max(0, Math.min(0.5, (now - previous) / 1000));
     previous = now;
+    if (parked) return;
     if (!document.hidden && layer.visible && !view.suspended) elapsed += delta;
     const position = patrolAt(patrol, elapsed);
     const battery = Math.max(15, 82 - elapsed / 1200);
@@ -152,8 +171,23 @@ export async function initForklift({ view, layers }) {
     values.Status.textContent = speed ? "Moving" : "Stopped";
     if (view.popup?.visible && view.popup.selectedFeature === graphic) view.popup.location = geometry;
   }
+  function park() {
+    parked = true;
+    const geometry = new Point({ x: parkedPosition[0], y: parkedPosition[1], spatialReference: { wkid: 26993 } });
+    graphic.geometry = geometry;
+    graphic.attributes = { ...graphic.attributes, SPEED_MPH: 0, DEMO_STATUS: "Parked" };
+    graphic.symbol = { ...symbol, angle: 0 };
+    values["Moving speed"].textContent = "0.0 mph";
+    values.Status.textContent = "Parked";
+    if (view.popup?.visible && view.popup.selectedFeature === graphic) view.popup.location = geometry;
+  }
+  function resume() {
+    if (!parked) return;
+    parked = false;
+    previous = performance.now();
+  }
   update(previous);
   const timer = setInterval(() => update(performance.now()), 100);
   window.addEventListener("pagehide", () => clearInterval(timer), { once: true });
-  return { layer, graphic, patrol };
+  return { layer, graphic, patrol, park, resume };
 }

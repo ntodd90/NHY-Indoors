@@ -79,12 +79,12 @@ export const VIEWS = [
             "This is the pre-inspection walk-through, done from the map"]
   },
   {
-    id: "security", title: "After-hours security", icon: "lock", desc: "Alarms, sensors and door contacts",
-    layers: [...INDOOR, "security"], target: { facility: "NHY.B1", expand: 1.15 }, floor: "NHY.B1.L1",
+        id: "security", title: "After-hours security", icon: "lock", desc: "Overnight patrol, cameras, heatmap and alarms",
+        layers: [...INDOOR, ...YARD, "doors", "security", "cameras", "cameraCoverage", "forklift", "overnightGuard", "overnightHeat"], target: { site: true }, floor: null,
     highlight: { cat: "security", where: "DEMO_STATUS <> 'Normal'" },
-    notes: ["Garden Center exit door contact in alarm (held open 4 min)",
-            "Door contacts, motion sensors and intrusion panels are located by floor",
-            "Use Loss Prevention to see cameras and their coverage areas"]
+        notes: ["The yard forklift is parked for after-hours operations",
+          "One simulated guard patrols the store and yard at 1.4 mph",
+          "A bright staff-restroom hotspot reveals repeated 30 to 60 minute breaks"]
   },
   {
     id: "utilities", title: "Utilities: full stack", icon: "layers", desc: "Power, fiber, water, sewer, fire, HVAC, irrigation",
@@ -96,7 +96,7 @@ export const VIEWS = [
 ];
 
 // -------------------------------------------------------------------------------------
-export async function initViews({ view, flayers, floorFilterEl, listEl, notesEl, initialViewpoint = view.viewpoint?.clone(), initialFloor = null }) {
+export async function initViews({ view, flayers, floorFilterEl, listEl, notesEl, initialViewpoint = view.viewpoint?.clone(), initialFloor = null, onViewChange = null }) {
   const cat = new Map(flayers.map((l) => [l, classify(l)]));
   const snap = new Map(flayers.map((l) => [l, { visible: l.visible, def: l.definitionExpression || "" }]));
   const visibilitySnap = new Map(view.map.allLayers.toArray().map((layer) => [layer, layer.visible]));
@@ -114,6 +114,16 @@ export async function initViews({ view, flayers, floorFilterEl, listEl, notesEl,
     });
   }
   showSecurityCameras(false);
+  let trailHours = 12;
+  let overnightHeatVisible = false;
+  function applyTrailWindow() {
+    const layer = layersOf("overnightHeat")[0];
+    if (layer && activeId === "security") {
+      const original = snap.get(layer)?.def;
+      const filter = `HOURS_AGO <= ${trailHours}`;
+      layer.definitionExpression = original ? `(${original}) AND (${filter})` : filter;
+    }
+  }
   const setVisible = (l, v) => {
     l.visible = v;
     if (v) { let p = l.parent; while (p && p.type === "group") { p.visible = true; p = p.parent; } }
@@ -130,16 +140,18 @@ export async function initViews({ view, flayers, floorFilterEl, listEl, notesEl,
       const s = snap.get(l), c = cat.get(l);
       let vis = v.layers === "default" ? s.visible : v.layers.includes(c);
       if (v.show?.includes(c)) vis = true;
-      if (c === "cameras" || c === "cameraCoverage") vis = v.id === "loss-prevention";
+      if (c === "cameras" || c === "cameraCoverage") vis = v.id === "loss-prevention" || v.id === "security";
+      if (c === "overnightHeat") vis = v.id === "security" && overnightHeatVisible;
       setVisible(l, vis);
-      if (c === "guards") return;
-      const f = v.filters?.[c];
+      if (["guards", "forklift", "overnightGuard"].includes(c)) return;
+      const f = c === "overnightHeat" && v.id === "security" ? `HOURS_AGO <= ${trailHours}` : v.filters?.[c];
       l.definitionExpression = f ? (s.def ? `(${s.def}) AND (${f})` : f) : s.def;
     });
     showSecurityCameras(v.id === "loss-prevention");
 
     // 2. floor
     setFloor(view, floorFilterEl, v.floor || null);
+    onViewChange?.(v.id);
 
     // 3. camera
     try {
@@ -177,7 +189,21 @@ export async function initViews({ view, flayers, floorFilterEl, listEl, notesEl,
     } catch (e) { console.warn("[views] highlight", e); }
 
     renderList();
-    notesEl.innerHTML = `<div class="notes-title">${v.title}</div><ul>${v.notes.map((n) => `<li>${n}</li>`).join("")}</ul>`;
+    notesEl.innerHTML = `<div class="notes-title">${v.title}</div>${v.id === "security" ? `<div class="overnight-controls"><calcite-label>Trail history<calcite-select id="overnightTrailHours" value="${trailHours}" scale="s"><calcite-option value="2">Last 2 hours</calcite-option><calcite-option value="4">Last 4 hours</calcite-option><calcite-option value="8">Last 8 hours</calcite-option><calcite-option value="12">Last 12 hours</calcite-option></calcite-select></calcite-label><calcite-button id="toggleOvernightHeat" appearance="outline" icon-start="layers" scale="s" aria-pressed="${overnightHeatVisible}">${overnightHeatVisible ? "Hide heat" : "Show heat"}</calcite-button></div>` : ""}<ul>${v.notes.map((n) => `<li>${n}</li>`).join("")}</ul>`;
+    const trailSelect = notesEl.querySelector("#overnightTrailHours");
+    trailSelect?.addEventListener("calciteSelectChange", (event) => {
+      const hours = Number(event.target.value);
+      if (![2, 4, 8, 12].includes(hours)) return;
+      trailHours = hours;
+      applyTrailWindow();
+    });
+    trailSelect?.closest(".notes")?.querySelector("#toggleOvernightHeat")?.addEventListener("click", (event) => {
+      overnightHeatVisible = !overnightHeatVisible;
+      const layer = layersOf("overnightHeat")[0];
+      if (layer && activeId === "security") layer.visible = overnightHeatVisible;
+      event.currentTarget.textContent = overnightHeatVisible ? "Hide heat" : "Show heat";
+      event.currentTarget.setAttribute("aria-pressed", String(overnightHeatVisible));
+    });
   }
 
   function renderList() {

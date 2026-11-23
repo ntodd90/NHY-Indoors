@@ -71,6 +71,9 @@ body { font-family: var(--calcite-font-family, "Avenir Next", "Segoe UI", sans-s
 .notes-title { font-weight: 700; margin-bottom: 4px; color: #1f2937; }
 .notes ul { margin: 4px 0 0 18px; padding: 0; }
 .notes li { margin: 3px 0; }
+.overnight-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; margin-top: 10px; }
+.overnight-controls calcite-label { margin: 0; min-width: 0; }
+.overnight-controls calcite-button { margin-bottom: 4px; white-space: nowrap; }
 
 .camera-dialog { width: min(880px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 32px); box-sizing: border-box; padding: 0; border: 1px solid #cbd5d0; border-radius: 6px; color: #1f2937; background: #fff; overflow: auto; }
 .camera-dialog::backdrop { background: rgba(12, 20, 16, .65); }
