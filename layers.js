@@ -51,6 +51,7 @@ const RULES = [
   ["sites", (f) => f.has("SITE_ID")]
 ];
 export function classify(layer) {
+  if (layer.id === "security-guards") return "guards";
   const f = new Set((layer.fields || []).map((x) => x.name.toUpperCase()));
   const hit = RULES.find(([, test]) => test(f, layer));
   return hit ? hit[0] : "other";

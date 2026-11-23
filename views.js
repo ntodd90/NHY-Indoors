@@ -11,8 +11,8 @@ const YARD = ["zones", "stalls", "lanes", "gates"];
 
 export const VIEWS = [
   {
-        id: "loss-prevention", title: "Loss Prevention", icon: "lock", desc: "Security devices, cameras and coverage across the store and yard",
-        layers: [...INDOOR, ...YARD, "doors", "security", "cameras", "cameraCoverage"], target: { site: true }, floor: null,
+        id: "loss-prevention", title: "Loss Prevention", icon: "lock", desc: "Security patrols, devices and cameras across the store and yard",
+        layers: [...INDOOR, ...YARD, "doors", "security", "cameras", "cameraCoverage", "guards"], target: { site: true }, floor: null,
         highlight: { cat: "security", where: "DEMO_STATUS <> 'Normal'" },
         notes: ["All security devices and cameras are visible across the store and yard; utilities are off",
           "Select a camera for simulated footage and its illustrative coverage area",
@@ -132,6 +132,7 @@ export async function initViews({ view, flayers, floorFilterEl, listEl, notesEl,
       if (v.show?.includes(c)) vis = true;
       if (c === "cameras" || c === "cameraCoverage") vis = v.id === "loss-prevention";
       setVisible(l, vis);
+      if (c === "guards") return;
       const f = v.filters?.[c];
       l.definitionExpression = f ? (s.def ? `(${s.def}) AND (${f})` : f) : s.def;
     });

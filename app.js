@@ -345,6 +345,13 @@ try {
 }
 
 try {
+  const { initGuards } = await import("./guards.js");
+  flayers.push(await initGuards({ view, layers: L }));
+} catch (e) {
+  showError("Security guard patrols failed to load.", e);
+}
+
+try {
   const { initViews } = await import("./views.js");
   const initialFloor = floorFilterEl?.level || view.floors?.getItemAt(0) || null;
   const { reset } = await initViews({ view, flayers, floorFilterEl, initialViewpoint, initialFloor, listEl: $("viewList"), notesEl: $("viewNotes") });
